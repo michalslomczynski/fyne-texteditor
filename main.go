@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -14,42 +15,65 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func main() {
-	// Main initialization
-	app := app.New()
-	mainWindow := app.NewWindow("Text Editor")
+type Tabs struct {
+	tabBar          *container.AppTabs
+	addNewTab       func()
+	closeTab        func()
+	newEditor       func() *widget.Entry
+	currentEditor   *widget.Entry
+	calculateWords  func(string) int
+	wordCountLabel  *widget.Label
+	appendTabButton *widget.Button
+	closeTabButton  *widget.Button
+}
 
-	// TabBar
-	tabBar := container.NewAppTabs()
-	addNewTab := func() {
-		tabBar.Append(
+func (t *Tabs) Init() {
+	t.calculateWords = func(s string) int {
+		words := strings.Fields(s)
+		return len(words)
+	}
+	t.wordCountLabel = widget.NewLabel("")
+	t.tabBar = container.NewAppTabs()
+
+	t.newEditor = func() *widget.Entry {
+		editor := widget.NewMultiLineEntry()
+		editor.SetPlaceHolder("Start typing here...")
+		editor.OnChanged = func(s string) {
+			t.wordCountLabel.Text = fmt.Sprintf("Words count: %v", t.calculateWords(s))
+		}
+		return editor
+	}
+
+	t.addNewTab = func() {
+		t.currentEditor = t.newEditor()
+		t.tabBar.Append(
 			container.NewTabItemWithIcon(
 				"New File",
 				nil,
-				func() *widget.Entry {
-					editor := widget.NewMultiLineEntry()
-					editor.SetPlaceHolder("Start typing here...")
-					return editor
-				}(),
+				t.currentEditor,
 			),
 		)
+		t.tabBar.SelectTabIndex(len(t.tabBar.Items) - 1)
 	}
-	appendTabButton := widget.NewButtonWithIcon("", theme.ContentAddIcon(), addNewTab)
 
-	closeTab := func() {
-		currentIdx := tabBar.CurrentTabIndex()
-		fmt.Println(currentIdx)
+	t.closeTab = func() {
+		currentIdx := t.tabBar.CurrentTabIndex()
 		if currentIdx >= 0 {
-			tabBar.RemoveIndex(currentIdx)
+			t.tabBar.RemoveIndex(currentIdx)
 		}
 	}
-	closeTabButton := widget.NewButtonWithIcon("", theme.CancelIcon(), closeTab)
 
-	toolBar := container.NewHBox(
-		appendTabButton,
-		closeTabButton,
-		layout.NewSpacer(),
-	)
+	t.appendTabButton = widget.NewButtonWithIcon("", theme.ContentAddIcon(), t.addNewTab)
+	t.closeTabButton = widget.NewButtonWithIcon("", theme.CancelIcon(), t.closeTab)
+}
+
+func main() {
+	tabs := Tabs{}
+	tabs.Init()
+
+	// Main initialization
+	app := app.New()
+	mainWindow := app.NewWindow("Text Editor")
 
 	// Menu
 	loadFile := func() {
@@ -66,7 +90,7 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			tabBar.Append(
+			tabs.tabBar.Append(
 				container.NewTabItemWithIcon(
 					"New File",
 					nil,
@@ -77,7 +101,7 @@ func main() {
 					}(),
 				),
 			)
-			tabBar.SelectTabIndex(len(tabBar.Items) - 1)
+			tabs.tabBar.SelectTabIndex(len(tabs.tabBar.Items) - 1)
 		}, mainWindow)
 		fileDialog.Show()
 	}
@@ -93,12 +117,18 @@ func main() {
 	// Main window layout
 	mainWindow.SetContent(
 		container.NewBorder(
-			toolBar,
-			nil,
+			container.NewHBox(
+				tabs.appendTabButton,
+				tabs.closeTabButton,
+			),
+			container.NewHBox(
+				layout.NewSpacer(),
+				tabs.wordCountLabel,
+			),
 			nil,
 			nil,
 			container.NewHScroll(
-				tabBar,
+				tabs.tabBar,
 			),
 		),
 	)
