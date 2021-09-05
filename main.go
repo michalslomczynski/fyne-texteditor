@@ -210,28 +210,17 @@ type MainMenu struct {
 	saveFile func()
 }
 
-func (m *MainMenu) Init() {
-	m.fileMenu = fyne.NewMenu(
-		"File",
-		fyne.NewMenuItem("Open", m.loadFile),
-		fyne.NewMenuItem("Save", nil),
-		fyne.NewMenuItem("Save As...", nil),
-	)
-	m.menu = fyne.NewMainMenu(m.fileMenu)
-}
-
 func main() {
+	// Main window initialization
+	app := app.New()
+	mainWindow := app.NewWindow("Text Editor")
+
 	tabs := Tabs{}
 	tabs.Init()
 
 	mainMenu := MainMenu{}
-	mainMenu.Init()
 
-	// Main initialization
-	app := app.New()
-	mainWindow := app.NewWindow("Text Editor")
-
-	// Menu
+	// File Menu
 	mainMenu.loadFile = func() {
 		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
@@ -258,15 +247,50 @@ func main() {
 				),
 			)
 			tabs.tabBar.SelectTabIndex(len(tabs.tabBar.Items) - 1)
+			tabs.tabBar.CurrentTab().Text = reader.URI().Name()
+			tabs.tabBar.Refresh()
 		}, mainWindow)
 		fileDialog.Show()
 	}
+
+	mainMenu.saveFile = func() {
+		dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
+			if err != nil {
+				dialog.ShowError(err, mainWindow)
+				return
+			}
+			if writer == nil {
+				log.Println("Cancelled")
+				return
+			}
+			defer writer.Close()
+			var text string
+			if editor, ok := tabs.editors[tabs.tabBar.CurrentTabIndex()]; ok {
+				text = editor.Text
+			} else {
+				text = ""
+			}
+			_, err = writer.Write([]byte(text))
+			if err != nil {
+				dialog.ShowError(err, mainWindow)
+			}
+			tabs.tabBar.CurrentTab().Text = writer.URI().Name()
+			tabs.tabBar.Refresh()
+		}, mainWindow)
+	}
+
+	mainMenu.fileMenu = fyne.NewMenu(
+		"File",
+		fyne.NewMenuItem("Open", mainMenu.loadFile),
+		fyne.NewMenuItem("Save", mainMenu.saveFile),
+	)
+	mainMenu.menu = fyne.NewMainMenu(mainMenu.fileMenu)
 	mainWindow.SetMainMenu(mainMenu.menu)
 
 	// Most commond word button and popup
 	popWidget := widget.NewLabel("")
 	pop := widget.NewPopUp(popWidget, mainWindow.Canvas())
-	button := widget.NewButtonWithIcon(
+	commonWordButton := widget.NewButtonWithIcon(
 		"",
 		theme.HelpIcon(),
 		func() {
@@ -292,7 +316,7 @@ func main() {
 				tabs.wordsLabel,
 				tabs.sentencesLabel,
 				tabs.paragraphsLabel,
-				button,
+				commonWordButton,
 			),
 			nil,
 			nil,
