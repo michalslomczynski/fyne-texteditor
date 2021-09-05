@@ -15,68 +15,127 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// Declares text editor widgets and basic functionalities.
 type Tabs struct {
-	tabBar          *container.AppTabs
-	addNewTab       func()
-	closeTab        func()
-	newEditor       func() *widget.Entry
-	currentEditor   *widget.Entry
-	calculateWords  func(string) int
-	wordCountLabel  *widget.Label
-	appendTabButton *widget.Button
-	closeTabButton  *widget.Button
+	tabBar *container.AppTabs
+
+	createEditor   func() *widget.Entry
+	editors        map[int]*widget.Entry
+	editorCallback func()
+
+	wordsLabel       *widget.Label
+	sentencesLabel   *widget.Label
+	paragraphsLabel  *widget.Label
+	calcWords        func(string) int
+	calcSentences    func(string) int
+	calcParagraphs   func(string) int
+	updateStatistics func()
+
+	appendButton *widget.Button
+	closeButton  *widget.Button
+	addNewTab    func()
+	closeTab     func()
 }
 
+// Implements Tabs widgets and its functionalities.
 func (t *Tabs) Init() {
-	t.calculateWords = func(s string) int {
+	t.editors = make(map[int]*widget.Entry)
+
+	// Count words in passed text
+	t.calcWords = func(s string) int {
 		words := strings.Fields(s)
 		return len(words)
 	}
-	t.wordCountLabel = widget.NewLabel("")
+
+	// Tabs root widget
 	t.tabBar = container.NewAppTabs()
 
-	t.newEditor = func() *widget.Entry {
+	// Statistics widgets
+	t.wordsLabel = widget.NewLabel("")
+
+	// Extends editor callback for new events
+	t.editorCallback = func() {
+		idx := t.tabBar.CurrentTabIndex()
+		if editor, ok := t.editors[idx]; ok {
+			editor.OnChanged(editor.Text)
+		}
+	}
+
+	// Updates statistics for just focused tab
+	t.tabBar.OnChanged = func(tab *container.TabItem) {
+		t.editorCallback()
+	}
+
+	// Instantiates new text field
+	t.createEditor = func() *widget.Entry {
 		editor := widget.NewMultiLineEntry()
 		editor.SetPlaceHolder("Start typing here...")
 		editor.OnChanged = func(s string) {
-			t.wordCountLabel.Text = fmt.Sprintf("Words count: %v", t.calculateWords(s))
+			t.wordsLabel.Text = fmt.Sprintf("Words: %v", t.calcWords(s))
 		}
 		return editor
 	}
 
+	// Adds new tab and its associated text field
 	t.addNewTab = func() {
-		t.currentEditor = t.newEditor()
+		newEditor := t.createEditor()
 		t.tabBar.Append(
 			container.NewTabItemWithIcon(
 				"New File",
 				nil,
-				t.currentEditor,
+				newEditor,
 			),
 		)
 		t.tabBar.SelectTabIndex(len(t.tabBar.Items) - 1)
+		t.editors[t.tabBar.CurrentTabIndex()] = newEditor
+		t.wordsLabel.Text = fmt.Sprintf("Words: %v", 0)
 	}
 
+	// Closes currently active tab
 	t.closeTab = func() {
 		currentIdx := t.tabBar.CurrentTabIndex()
 		if currentIdx >= 0 {
 			t.tabBar.RemoveIndex(currentIdx)
+			delete(t.editors, currentIdx)
+			t.editorCallback()
 		}
 	}
 
-	t.appendTabButton = widget.NewButtonWithIcon("", theme.ContentAddIcon(), t.addNewTab)
-	t.closeTabButton = widget.NewButtonWithIcon("", theme.CancelIcon(), t.closeTab)
+	// Add/Close tab buttons
+	t.appendButton = widget.NewButtonWithIcon("", theme.ContentAddIcon(), t.addNewTab)
+	t.closeButton = widget.NewButtonWithIcon("", theme.CancelIcon(), t.closeTab)
+}
+
+type MainMenu struct {
+	menu     *fyne.MainMenu
+	fileMenu *fyne.Menu
+	loadFile func()
+	saveFile func()
+}
+
+func (m *MainMenu) Init() {
+	m.fileMenu = fyne.NewMenu(
+		"File",
+		fyne.NewMenuItem("Open", m.loadFile),
+		fyne.NewMenuItem("Save", nil),
+		fyne.NewMenuItem("Save As...", nil),
+	)
+	m.menu = fyne.NewMainMenu(m.fileMenu)
 }
 
 func main() {
 	tabs := Tabs{}
 	tabs.Init()
 
+	mainMenu := MainMenu{}
+	mainMenu.Init()
+
 	// Main initialization
 	app := app.New()
 	mainWindow := app.NewWindow("Text Editor")
 
 	// Menu
-	loadFile := func() {
+	mainMenu.loadFile = func() {
 		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				dialog.ShowError(err, mainWindow)
@@ -105,25 +164,18 @@ func main() {
 		}, mainWindow)
 		fileDialog.Show()
 	}
-	fileMenu := fyne.NewMenu(
-		"File",
-		fyne.NewMenuItem("Open", loadFile),
-		fyne.NewMenuItem("Save", nil),
-		fyne.NewMenuItem("Save As...", nil),
-	)
-	mainMenu := fyne.NewMainMenu(fileMenu)
-	mainWindow.SetMainMenu(mainMenu)
+	mainWindow.SetMainMenu(mainMenu.menu)
 
 	// Main window layout
 	mainWindow.SetContent(
 		container.NewBorder(
 			container.NewHBox(
-				tabs.appendTabButton,
-				tabs.closeTabButton,
+				tabs.appendButton,
+				tabs.closeButton,
 			),
 			container.NewHBox(
 				layout.NewSpacer(),
-				tabs.wordCountLabel,
+				tabs.wordsLabel,
 			),
 			nil,
 			nil,
