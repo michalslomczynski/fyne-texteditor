@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"strings"
+	"unicode"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -15,7 +16,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Declares text editor widgets and basic functionalities.
+// Declares text editor widgets and its basic functionalities.
+// Used for preserving and sharing state between child widgets.
+// Layout can be specified freely.
 type Tabs struct {
 	tabBar *container.AppTabs
 
@@ -29,7 +32,7 @@ type Tabs struct {
 	calcWords        func(string) int
 	calcSentences    func(string) int
 	calcParagraphs   func(string) int
-	updateStatistics func()
+	updateStatistics func(string)
 
 	appendButton *widget.Button
 	closeButton  *widget.Button
@@ -41,24 +44,100 @@ type Tabs struct {
 func (t *Tabs) Init() {
 	t.editors = make(map[int]*widget.Entry)
 
-	// Count words in passed text
+	// Counts words
 	t.calcWords = func(s string) int {
 		words := strings.Fields(s)
 		return len(words)
 	}
 
-	// Tabs root widget
+	// Counts sentences
+	t.calcSentences = func(s string) int {
+		var sentences int
+		if len(s) > 0 {
+			sentences = 1
+		} else {
+			sentences = 0
+		}
+		insideWord := false
+		newSentence := false
+		for _, Rune := range s {
+			switch Rune {
+			case '.', '?', '!':
+				if insideWord {
+					newSentence = true
+				}
+				insideWord = false
+			default:
+				if unicode.IsLetter(Rune) {
+					insideWord = true
+					if newSentence {
+						sentences++
+						newSentence = false
+					}
+				}
+			}
+		}
+		return sentences
+	}
+
+	// Counts paragraphs
+	t.calcParagraphs = func(s string) int {
+		var paragraphs int
+		if len(s) > 0 {
+			paragraphs = 1
+		} else {
+			paragraphs = 0
+		}
+		prevNewLine := false
+		inSentence := false
+		newParagraph := false
+		for _, Rune := range s {
+			switch Rune {
+			case '\n':
+				if prevNewLine && inSentence {
+					newParagraph = true
+					prevNewLine = false
+					inSentence = false
+					continue
+				}
+				prevNewLine = true
+			default:
+				prevNewLine = false
+				if unicode.IsLetter(Rune) {
+					inSentence = true
+					if newParagraph {
+						paragraphs++
+						newParagraph = false
+					}
+				}
+			}
+		}
+		return paragraphs
+	}
+
+	// Root widget
 	t.tabBar = container.NewAppTabs()
 
 	// Statistics widgets
 	t.wordsLabel = widget.NewLabel("")
+	t.sentencesLabel = widget.NewLabel("")
+	t.paragraphsLabel = widget.NewLabel("")
 
 	// Extends editor callback for new events
 	t.editorCallback = func() {
 		idx := t.tabBar.CurrentTabIndex()
 		if editor, ok := t.editors[idx]; ok {
 			editor.OnChanged(editor.Text)
+		} else if idx == -1 {
+			t.updateStatistics("")
 		}
+	}
+
+	// Updates statistics widgets value
+	t.updateStatistics = func(text string) {
+		t.wordsLabel.Text = fmt.Sprintf("Words: %v", t.calcWords(text))
+		t.sentencesLabel.Text = fmt.Sprintf("Sentences: %v", t.calcSentences(text))
+		t.paragraphsLabel.Text = fmt.Sprintf("Paragraphs: %v", t.calcParagraphs(text))
 	}
 
 	// Updates statistics for just focused tab
@@ -70,8 +149,8 @@ func (t *Tabs) Init() {
 	t.createEditor = func() *widget.Entry {
 		editor := widget.NewMultiLineEntry()
 		editor.SetPlaceHolder("Start typing here...")
-		editor.OnChanged = func(s string) {
-			t.wordsLabel.Text = fmt.Sprintf("Words: %v", t.calcWords(s))
+		editor.OnChanged = func(text string) {
+			t.updateStatistics(text)
 		}
 		return editor
 	}
@@ -88,7 +167,7 @@ func (t *Tabs) Init() {
 		)
 		t.tabBar.SelectTabIndex(len(t.tabBar.Items) - 1)
 		t.editors[t.tabBar.CurrentTabIndex()] = newEditor
-		t.wordsLabel.Text = fmt.Sprintf("Words: %v", 0)
+		t.editorCallback()
 	}
 
 	// Closes currently active tab
@@ -176,6 +255,8 @@ func main() {
 			container.NewHBox(
 				layout.NewSpacer(),
 				tabs.wordsLabel,
+				tabs.sentencesLabel,
+				tabs.paragraphsLabel,
 			),
 			nil,
 			nil,
