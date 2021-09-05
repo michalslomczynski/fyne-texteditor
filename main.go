@@ -26,13 +26,15 @@ type Tabs struct {
 	editors        map[int]*widget.Entry
 	editorCallback func()
 
-	wordsLabel       *widget.Label
-	sentencesLabel   *widget.Label
-	paragraphsLabel  *widget.Label
-	calcWords        func(string) int
-	calcSentences    func(string) int
-	calcParagraphs   func(string) int
-	updateStatistics func(string)
+	wordsLabel         *widget.Label
+	sentencesLabel     *widget.Label
+	paragraphsLabel    *widget.Label
+	mostCommonWord     string
+	calcWords          func(string) int
+	calcSentences      func(string) int
+	calcParagraphs     func(string) int
+	calcMostCommonWord func(string) string
+	updateStatistics   func(string)
 
 	appendButton *widget.Button
 	closeButton  *widget.Button
@@ -115,6 +117,21 @@ func (t *Tabs) Init() {
 		return paragraphs
 	}
 
+	t.calcMostCommonWord = func(s string) string {
+		wordsMap := make(map[string]int)
+		words := strings.Fields(s)
+		var maxOccurence int
+		mostCommon := ""
+		for _, word := range words {
+			wordsMap[word]++
+			if wordsMap[word] > maxOccurence {
+				maxOccurence = wordsMap[word]
+				mostCommon = word
+			}
+		}
+		return mostCommon
+	}
+
 	// Root widget
 	t.tabBar = container.NewAppTabs()
 
@@ -138,6 +155,7 @@ func (t *Tabs) Init() {
 		t.wordsLabel.Text = fmt.Sprintf("Words: %v", t.calcWords(text))
 		t.sentencesLabel.Text = fmt.Sprintf("Sentences: %v", t.calcSentences(text))
 		t.paragraphsLabel.Text = fmt.Sprintf("Paragraphs: %v", t.calcParagraphs(text))
+		t.mostCommonWord = t.calcMostCommonWord(text)
 	}
 
 	// Updates statistics for just focused tab
@@ -245,6 +263,23 @@ func main() {
 	}
 	mainWindow.SetMainMenu(mainMenu.menu)
 
+	// Most commond word button and popup
+	popWidget := widget.NewLabel("")
+	pop := widget.NewPopUp(popWidget, mainWindow.Canvas())
+	button := widget.NewButtonWithIcon(
+		"",
+		theme.HelpIcon(),
+		func() {
+			popWidget.Text = fmt.Sprintf("Most common word:\n%v", tabs.mostCommonWord)
+			pop.ShowAtPosition(
+				fyne.NewPos(
+					mainWindow.Canvas().Size().Width/2-pop.MinSize().Width/2,
+					mainWindow.Canvas().Size().Height/2-pop.MinSize().Height/2,
+				),
+			)
+		},
+	)
+
 	// Main window layout
 	mainWindow.SetContent(
 		container.NewBorder(
@@ -257,6 +292,7 @@ func main() {
 				tabs.wordsLabel,
 				tabs.sentencesLabel,
 				tabs.paragraphsLabel,
+				button,
 			),
 			nil,
 			nil,
@@ -268,6 +304,6 @@ func main() {
 
 	// Main window parameters and launch
 	mainWindow.SetMaster()
-	mainWindow.Resize(fyne.NewSize(640, 460))
+	mainWindow.Resize(fyne.NewSize(640, 480))
 	mainWindow.ShowAndRun()
 }
